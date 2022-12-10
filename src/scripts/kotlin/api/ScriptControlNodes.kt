@@ -1,6 +1,7 @@
 package scripts.kotlin.api
 
 import com.allatori.annotations.DoNotRename
+import org.tribot.script.sdk.Waiting
 import org.tribot.script.sdk.antiban.PlayerPreferences
 import org.tribot.script.sdk.frameworks.behaviortree.*
 import org.tribot.script.sdk.painting.Painting
@@ -205,7 +206,9 @@ class ScriptBreakControlNode(
         startTime = Instant.now().epochSecond
 
         val result = behaviorTree {
-            repeatUntil({ this@ScriptBreakControlNode.getRemainder() < 1 }) {}
+            repeatUntil({ this@ScriptBreakControlNode.getRemainder() < 1 }) {
+                perform { Waiting.waitNormal(750, 50) }
+            }
         }.tick()
 
         return result
