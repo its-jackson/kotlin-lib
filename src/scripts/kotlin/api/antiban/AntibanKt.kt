@@ -5,7 +5,7 @@ import org.tribot.script.sdk.antiban.PlayerPreferences
 import org.tribot.script.sdk.util.TribotRandom
 import java.util.*
 
-object PolyAntiban : Antiban() {
+object AntibanKt : Antiban() {
     private val eatPercentMean = PlayerPreferences.preference(
         "scripts.antiban.AntibanExtension.ExtensionInstance.eatPercentMean"
     ) { g: PlayerPreferences.Generator ->
@@ -93,7 +93,7 @@ object PolyAntiban : Antiban() {
      * 3) Sometimes performs X
      * 4) Usually performs X
      */
-    fun qualitativeProbability(key: String): Boolean {
+    fun getProbability(key: String): Boolean {
         var changeChance = 0.0
         val changeUserType = PlayerPreferences.preference(
             "$key.changeUserType"

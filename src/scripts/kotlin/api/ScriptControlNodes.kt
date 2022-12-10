@@ -1,10 +1,20 @@
 package scripts.kotlin.api
 
-import org.tribot.script.sdk.frameworks.behaviortree.BehaviorTreeStatus
-import org.tribot.script.sdk.frameworks.behaviortree.Decorator
-import org.tribot.script.sdk.frameworks.behaviortree.IBehaviorNode
-import org.tribot.script.sdk.frameworks.behaviortree.IParentNode
+import com.allatori.annotations.DoNotRename
+import org.tribot.script.sdk.antiban.PlayerPreferences
+import org.tribot.script.sdk.frameworks.behaviortree.*
+import org.tribot.script.sdk.painting.Painting
+import org.tribot.script.sdk.painting.template.basic.BasicPaintTemplate
+import org.tribot.script.sdk.painting.template.basic.PaintLocation
+import org.tribot.script.sdk.painting.template.basic.PaintTextRow
+import org.tribot.script.sdk.util.TribotRandom
+import java.awt.Color
+import java.awt.Font
+import java.time.Instant
 
+/**
+ * @author Polymorphic
+ */
 fun IParentNode.performKill(name: String = "", func: () -> Unit) {
     val node = object : IBehaviorNode {
         override var name: String = ""
@@ -37,7 +47,7 @@ class ScriptControlNode(
     val endScript: () -> Unit,
 ) : Decorator() {
     override var name: String = "Script Control"
-    var consecutiveFailures = 0
+    private var consecutiveFailures = 0
 
     override fun tick(): BehaviorTreeStatus {
         if (child == null) throw IllegalStateException("ScriptControlNode must have a child node")
@@ -64,5 +74,168 @@ class ScriptControlNode(
         }
 
         return result
+    }
+}
+
+/**
+ * @author Polymorphic
+ */
+data class ScriptBreakControlData(
+    @DoNotRename
+    val frequencyMeanMinutes: Double = PlayerPreferences.preference(
+        "scripts.kotlin.api.ScriptControlNodes.scriptBreakControl.frequencyMeanMinutes"
+    ) { g: PlayerPreferences.Generator ->
+        g.uniform(120.0, 160.0)
+    },
+    @DoNotRename
+    val frequencyStdMinutes: Double = PlayerPreferences.preference(
+        "scripts.kotlin.api.ScriptControlNodes.scriptBreakControl.frequencyStdMinutes"
+    ) { g: PlayerPreferences.Generator ->
+        g.uniform(2.0, 12.0)
+    },
+    @DoNotRename
+    val timeMeanMinutes: Double = PlayerPreferences.preference(
+        "scripts.kotlin.api.ScriptControlNodes.scriptBreakControl.timeMeanMinutes"
+    ) { g: PlayerPreferences.Generator ->
+        g.uniform(20.0, 180.0)
+    },
+    @DoNotRename
+    val timeStdMinutes: Double = PlayerPreferences.preference(
+        "scripts.kotlin.api.ScriptControlNodes.scriptBreakControl.timeMeanStd"
+    ) { g: PlayerPreferences.Generator ->
+        g.uniform(3.0, 5.5)
+    }
+) {
+    @DoNotRename
+    private val conversion = 60
+
+    val frequencyMeanSeconds: Double
+        get() {
+            return frequencyMeanMinutes * conversion
+        }
+
+    val frequencyStdSeconds: Double
+        get() {
+            return frequencyStdMinutes * conversion
+        }
+
+    val timeMeanSeconds: Double
+        get() {
+            return timeMeanMinutes * conversion
+        }
+
+    val timeStdSeconds: Double
+        get() {
+            return timeStdMinutes * conversion
+        }
+}
+
+/**
+ * @author Polymorphic
+ */
+fun IParentNode.scriptBreakControl(
+    breakControlData: ScriptBreakControlData? = null,
+    walkToBank: Boolean = false,
+    init: IParentNode .() -> Unit
+) = initNode(
+    "Script Break Control",
+    ScriptBreakControlNode(breakControlData, walkToBank),
+    init
+)
+
+/**
+ * @author Polymorphic
+ */
+class ScriptBreakControlNode(
+    private val breakControlData: ScriptBreakControlData?,
+    private val walkToBank: Boolean = false,
+    override var name: String = "Script Break Control"
+) : Decorator() {
+    private var manageTimer: Instant? = null
+    private var currentTimeSeconds: Double = 0.0
+    private var currentFrequencySeconds: Double = 0.0
+
+    private var startTime: Long = 0
+
+    private val paintTemplate = PaintTextRow.builder()
+        .background(Color.DARK_GRAY)
+        .font(Font("Segoe UI", 0, 12))
+        .noBorder()
+        .build()
+
+    private val paint = BasicPaintTemplate.builder()
+        .location(PaintLocation.TOP_RIGHT_VIEWPORT)
+        .row(
+            paintTemplate.toBuilder()
+                .label("Taking break")
+                .value { "${getRemainder()} seconds remaining" }
+                .build()
+        )
+        .build()
+
+    init {
+        generateFrequencySeconds()
+        generateTimeSeconds()
+    }
+
+    private fun getRemainder() = (currentTimeSeconds - (Instant.now().epochSecond - startTime)).toLong()
+
+    override fun tick(): BehaviorTreeStatus {
+        if (child == null) throw IllegalStateException("ScriptBreakControlNode must have a child node")
+        if (breakControlData != null && shouldBreak()) {
+            if (walkToBank) {
+                val walkResult = walkToAndDepositInvBank().tick()
+                if (walkResult != BehaviorTreeStatus.SUCCESS) return walkResult
+            }
+            Painting.addPaint(paint::render)
+            val result = takeBreak()
+            Painting.removePaint(paint::render)
+            update()
+            return result
+        }
+        return child!!.tick()
+    }
+
+    private fun shouldBreak(): Boolean {
+        if (manageTimer == null) generateManageTimer()
+        return manageTimer?.let { currentFrequencySeconds < (Instant.now().epochSecond - it.epochSecond) } == true
+    }
+
+    private fun takeBreak(): BehaviorTreeStatus {
+        startTime = Instant.now().epochSecond
+
+        val result = behaviorTree {
+            repeatUntil({ this@ScriptBreakControlNode.getRemainder() < 1 }) {}
+        }.tick()
+
+        return result
+    }
+
+    private fun update() {
+        generateTimeSeconds()
+        generateFrequencySeconds()
+        generateManageTimer()
+    }
+
+    private fun getTimeSeconds() = TribotRandom.normal(
+        breakControlData?.timeMeanSeconds ?: 0.0,
+        breakControlData?.timeStdSeconds ?: 1.0
+    )
+
+    private fun getFrequencySeconds() = TribotRandom.normal(
+        breakControlData?.frequencyMeanSeconds ?: 0.0,
+        breakControlData?.frequencyStdSeconds ?: 1.0
+    )
+
+    private fun generateTimeSeconds() {
+        currentTimeSeconds = getTimeSeconds()
+    }
+
+    private fun generateFrequencySeconds() {
+        currentFrequencySeconds = getFrequencySeconds()
+    }
+
+    private fun generateManageTimer() {
+        manageTimer = Instant.now()
     }
 }

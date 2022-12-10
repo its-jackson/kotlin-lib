@@ -1,13 +1,20 @@
 package scripts.kotlin.api
 
+import org.tribot.script.sdk.Bank
+import org.tribot.script.sdk.Inventory
 import org.tribot.script.sdk.Skill
+import org.tribot.script.sdk.Waiting
+import org.tribot.script.sdk.frameworks.behaviortree.IParentNode
+import org.tribot.script.sdk.frameworks.behaviortree.condition
+import org.tribot.script.sdk.frameworks.behaviortree.selector
+import org.tribot.script.sdk.frameworks.behaviortree.sequence
 import java.util.concurrent.TimeUnit
 
-interface Satisfiable {
+interface ISatisfiable {
     fun isSatisfied(): Boolean
 }
 
-abstract class StopCondition : Satisfiable {
+abstract class AbstractStopCondition : ISatisfiable {
     enum class ConditionType(val con: String) {
         TIME("Time condition"),
         RESOURCE_GAINED("Resource gained condition"),
@@ -16,11 +23,11 @@ abstract class StopCondition : Satisfiable {
 }
 
 class TimeStopCondition(
-    days: Long = 0,
-    hours: Long = 0,
-    minutes: Long = 0,
-    seconds: Long = 0
-) : StopCondition() {
+    val days: Long = 0,
+    val hours: Long = 0,
+    val minutes: Long = 0,
+    val seconds: Long = 0
+) : AbstractStopCondition() {
     private var startTime: Long = -1
 
     private val toMillis = TimeUnit.DAYS.toMillis(days)
@@ -35,43 +42,50 @@ class TimeStopCondition(
     }
 
     override fun toString(): String {
-        if (startTime == -1L) return "(hours:00:minutes:00:seconds:00)"
+        if (startTime == -1L) return "(days:$days:hours:$hours:minutes:$minutes:seconds:$seconds)"
         val remain = toMillis - (System.currentTimeMillis() - startTime)
-        val hours = remain / 1000 / 60 / 60
-        val minutes = remain / 1000 / 60 % 60
-        val seconds = remain / 1000 % 60
-        return "Time (hours:$hours:minutes:$minutes:seconds:$seconds)"
+        val hoursRemaining = remain / 1000 / 60 / 60
+        val minutesRemaining = remain / 1000 / 60 % 60
+        val secondsRemaining = remain / 1000 % 60
+        return "Time (hours:$hoursRemaining:minutes:$minutesRemaining:seconds:$secondsRemaining)"
     }
 }
 
 class ResourceGainedCondition(
     val id: Int,
-    val amount: Int = -1 // default value is infinity
-) : StopCondition() {
+    val amount: Int = -1 // infinity
+) : AbstractStopCondition() {
     val remainder: Int
         get() = amount - sum
 
     private var sum = 0
 
-    /**
-     * It is expected that anyone who creates an instance must
-     * invoke this function manually to update the remainder and sum.
-     * Or else the resource amount won't ever satisfy.
-     */
-    fun updateSum(amt: Int) {
+    fun updateSumDirectly(amt: Int) {
         if (amount < 1 || amt < 1) return
         sum = sum.plus(amt)
     }
 
-    override fun isSatisfied(): Boolean =
-        amount > 0 && (remainder < 1 && sum >= amount)
+    internal fun withdrawResourceFromBank() =
+        if (remainder in 1..28)
+            Bank.withdraw(
+                id,
+                remainder
+            ) && Waiting.waitUntil { Inventory.contains(id) }
+        else
+            Bank.withdrawAll(id) && Waiting.waitUntil { Inventory.contains(id) }
+
+    internal fun bankHasResource() = Bank.contains(id)
+
+    internal fun inventoryHasResource() = Inventory.contains(id)
+
+    override fun isSatisfied() = amount > 0 && (remainder < 1 && sum >= amount)
 
     override fun toString() = "Resource gained (id=$id, amount=$amount, remainder=$remainder, sum=$sum)"
 }
 
 class SkillLevelsReachedCondition(
-    private val skills: Map<Skill, Int>, // multiple skills, multiple skill level goals
-) : StopCondition() {
+    val skills: Map<Skill, Int>, // multiple skills, multiple skill level goals
+) : AbstractStopCondition() {
     override fun isSatisfied() = skills.entries.all {
         val skill = it.key
         val goal = it.value
@@ -81,6 +95,17 @@ class SkillLevelsReachedCondition(
     override fun toString() = "Levels reached " +
             "(${
                 skills.entries.fold("")
-                { acc, s -> "$acc${s.key}=${s.value}, actual=${s.key.actualLevel}" }
+                { acc, s -> "$acc{${s.key}=${s.value}, actual=${s.key.actualLevel}}" }
             })"
+}
+
+fun IParentNode.fetchResourceFromBank(gainedCondition: ResourceGainedCondition?) = selector {
+    condition { gainedCondition?.inventoryHasResource() }
+
+    sequence {
+        walkToAndDepositInvBank(closeBank = false)
+        condition { gainedCondition?.bankHasResource() }
+        condition { gainedCondition?.withdrawResourceFromBank() }
+        condition { Bank.close() }
+    }
 }

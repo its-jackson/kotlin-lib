@@ -8,7 +8,7 @@ import org.tribot.script.sdk.query.Query
 import org.tribot.script.sdk.walking.GlobalWalking
 import org.tribot.script.sdk.walking.LocalWalking
 import org.tribot.script.sdk.walking.WalkState
-import scripts.kotlin.api.antiban.PolyAntiban
+import scripts.kotlin.api.antiban.AntibanKt
 
 /**
 Composite nodes: sequence and selector, the sequence node behaves as an AND gate.
@@ -65,9 +65,11 @@ fun scriptLogicBehaviorTree(
  * Logging in, turning on character run, eating food.
  */
 fun IParentNode.scriptAbstractBehavior() = sequence {
-    loginAction()
-    enableRunAction()
-    eatingAction()
+    sequence {
+        loginAction()
+        enableRunAction()
+        eatingAction()
+    }
 }
 
 fun IParentNode.loginAction() = selector {
@@ -81,13 +83,13 @@ fun IParentNode.enableRunAction() = selector {
 }
 
 fun IParentNode.eatingAction() = selector {
-    condition { MyPlayer.getCurrentHealthPercent() > PolyAntiban.currentEatPercent }
+    condition { MyPlayer.getCurrentHealthPercent() > AntibanKt.currentEatPercent }
     condition { !getEatableInventoryQuery().isAny }
     perform {
         getEatableInventoryQuery().findClosestToMouse()
             .ifPresent { it.click() }
     }
-    perform { PolyAntiban.generateEatPercent() }
+    perform { AntibanKt.generateEatPercent() }
 }
 
 fun getEatableInventoryQuery() = Query.inventory()
@@ -103,7 +105,7 @@ fun walkTo(entity: Positionable) = GlobalWalking.walkTo(entity) {
     WalkState.CONTINUE
 }
 
-fun lootItems(dist: Double = 3.0) = getLootableItemsQuery(dist)
+fun lootItems() = getLootableItemsQuery()
     .toList()
     .fold(0) { runningSum, item ->
         if (Inventory.isFull())
@@ -114,17 +116,15 @@ fun lootItems(dist: Double = 3.0) = getLootableItemsQuery(dist)
         if (!item.interact("Take"))
             return runningSum
 
-        if (!Waiting.waitUntil(2500) { Inventory.getCount(item.id) > before })
+        if (!Waiting.waitUntil { Inventory.getCount(item.id) > before })
             return runningSum
 
         val result = runningSum + item.stack
         result
     }
 
-fun isLootableItemsFound(dist: Double = 3.0) = getLootableItemsQuery(dist).isAny
+fun isLootableItemsFound() = getLootableItemsQuery().isAny
 
-private fun getLootableItemsQuery(
-    dist: Double = 3.0
-) = Query.groundItems()
-    .maxDistance(dist)
+private fun getLootableItemsQuery() = Query.groundItems()
+    .maxDistance(2.5)
     .isReachable
