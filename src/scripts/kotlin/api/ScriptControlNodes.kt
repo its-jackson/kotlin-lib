@@ -11,7 +11,9 @@ import org.tribot.script.sdk.painting.template.basic.PaintTextRow
 import org.tribot.script.sdk.util.TribotRandom
 import java.awt.Color
 import java.awt.Font
+import java.awt.Graphics2D
 import java.time.Instant
+import java.util.function.Consumer
 
 /**
  * @author Polymorphic
@@ -174,6 +176,8 @@ class ScriptBreakControlNode(
         )
         .build()
 
+    private val paintConsumer = Consumer<Graphics2D> { paint }
+
     init {
         generateFrequencySeconds()
         generateTimeSeconds()
@@ -188,9 +192,9 @@ class ScriptBreakControlNode(
                 val walkResult = walkToAndDepositInvBank().tick()
                 if (walkResult != BehaviorTreeStatus.SUCCESS) return walkResult
             }
-            Painting.addPaint(paint::render)
+            Painting.addPaint { paintConsumer }
             val result = takeBreak()
-            Painting.removePaint(paint::render)
+            Painting.removePaint { paintConsumer }
             update()
             return result
         }
