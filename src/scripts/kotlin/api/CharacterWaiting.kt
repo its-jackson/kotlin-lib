@@ -1,5 +1,6 @@
 package scripts.kotlin.api
 
+import org.tribot.script.sdk.Login
 import org.tribot.script.sdk.MyPlayer
 import org.tribot.script.sdk.Waiting
 import java.lang.System.currentTimeMillis
@@ -16,11 +17,12 @@ fun waitUntilNotAnimating(
     actions: List<() -> Unit> = listOf(),
     interrupt: () -> Boolean = { false }
 ): Boolean {
+    val timeout: Long = (currentTimeMillis() +  60000) * 3
     var runningTime: Long = currentTimeMillis()
     var currentTime: Long = currentTimeMillis()
 
     while (currentTime - runningTime <= end) {
-        if (interrupt()) break
+        if (interrupt() || !Login.isLoggedIn() || timeout < currentTime) break
         actions.forEach { it.invoke() }
         if (MyPlayer.isAnimating()) runningTime = currentTimeMillis()
         currentTime = currentTimeMillis()
