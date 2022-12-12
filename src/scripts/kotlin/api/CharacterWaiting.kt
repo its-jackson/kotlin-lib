@@ -22,7 +22,7 @@ fun waitUntilNotAnimating(
     var currentTime: Long = currentTimeMillis()
 
     while (currentTime - runningTime <= end) {
-        if (interrupt() || !Login.isLoggedIn() || timeout < currentTime) break
+        if (interrupt() || !Login.isLoggedIn() || timeout < currentTimeMillis()) break
         actions.forEach { it.invoke() }
         if (MyPlayer.isAnimating()) runningTime = currentTimeMillis()
         currentTime = currentTimeMillis()
