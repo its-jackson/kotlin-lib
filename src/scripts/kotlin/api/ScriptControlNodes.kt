@@ -1,6 +1,7 @@
 package scripts.kotlin.api
 
 import com.allatori.annotations.DoNotRename
+import org.tribot.script.sdk.Log
 import org.tribot.script.sdk.Waiting
 import org.tribot.script.sdk.antiban.PlayerPreferences
 import org.tribot.script.sdk.frameworks.behaviortree.*
@@ -160,24 +161,6 @@ class ScriptBreakControlNode(
 
     private var startTime: Long = 0
 
-    private val paintTemplate = PaintTextRow.builder()
-        .background(Color.DARK_GRAY)
-        .font(Font("Segoe UI", 0, 12))
-        .noBorder()
-        .build()
-
-    private val paint = BasicPaintTemplate.builder()
-        .location(PaintLocation.TOP_RIGHT_VIEWPORT)
-        .row(
-            paintTemplate.toBuilder()
-                .label("Taking break")
-                .value { "${getRemainder()} seconds remaining" }
-                .build()
-        )
-        .build()
-
-    private val paintConsumer = Consumer<Graphics2D> { paint }
-
     init {
         generateFrequencySeconds()
         generateTimeSeconds()
@@ -192,9 +175,17 @@ class ScriptBreakControlNode(
                 val walkResult = walkToAndDepositInvBank().tick()
                 if (walkResult != BehaviorTreeStatus.SUCCESS) return walkResult
             }
-            Painting.addPaint { paintConsumer }
+            Log.debug(
+                "[ScriptBreakControl]" + " " +
+                        "Taking break for: " +
+                        currentTimeSeconds.toLong() + " " + "seconds"
+            )
             val result = takeBreak()
-            Painting.removePaint { paintConsumer }
+            Log.debug(
+                "[ScriptBreakControl]" + " "
+                        + "Break has ended: " + getRemainder() + " "
+                        + "remaining seconds"
+            )
             update()
             return result
         }
