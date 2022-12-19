@@ -11,35 +11,30 @@ import org.tribot.script.sdk.walking.WalkState
 import scripts.kotlin.api.antiban.AntibanKt
 
 /**
-Composite nodes: sequence and selector, the sequence node behaves as an AND gate.
-The selector node behaves as an OR gate.
+Composite nodes: sequence and selector
+Sequence node: behaves as an AND gate.
+Selector node: behaves as an OR gate.
 
-Decorative nodes: inverter, repeatUntil, succeeder, condition.
+Decorative nodes: inverter, repeatUntil, succeeder, condition, perform.
+perform: always report success and run a function.
+
 inverter: invert the result of the child. A child fails, and it will return success to its parent,
 or a child succeeds, and it will return failure to the parent.
 
 condition: ensures that we can skip steps we don't need to do. So if the condition is satisfied,
 great! We move on. If not, we do something to satisfy it.
-
-Leaf nodes: perform, terminal node that will always return success.
  */
 
 /**
  * This behavior tree ensures the user is logged in first.
- * Then it will ensure the inventory is empty, before entering the main script logic.
  */
 fun initializeScriptBehaviorTree() = behaviorTree {
-    repeatUntil(BehaviorTreeStatus.KILL) {
+    repeatUntil({ Login.isLoggedIn() }) {
         sequence {
             selector {
                 inverter { condition { !Login.isLoggedIn() } }
                 condition { Login.login() }
             }
-            selector {
-                inverter { condition { !Inventory.isEmpty() } }
-                walkToAndDepositInvBank()
-            }
-            performKill { Camera.setZoomPercent(0.00) }
         }
     }
 }
@@ -54,8 +49,8 @@ fun scriptLogicBehaviorTree(
     specificBehavior: IParentNode.() -> Unit
 ) = behaviorTree {
     sequence {
-        scriptControl { abstractBehavior() }
-        scriptControl { specificBehavior() }
+        scriptControl { scriptDeathControl { abstractBehavior() } }
+        scriptControl { scriptDeathControl { specificBehavior() } }
     }
 }
 
@@ -70,6 +65,10 @@ fun IParentNode.scriptAbstractBehavior() = sequence {
         enableRunAction()
         eatingAction()
     }
+}
+
+fun setupOptionsAction() {
+
 }
 
 fun IParentNode.loginAction() = selector {

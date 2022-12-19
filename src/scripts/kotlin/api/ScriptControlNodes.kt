@@ -1,20 +1,12 @@
 package scripts.kotlin.api
 
 import com.allatori.annotations.DoNotRename
-import org.tribot.script.sdk.Log
-import org.tribot.script.sdk.Waiting
+import org.tribot.script.sdk.*
 import org.tribot.script.sdk.antiban.PlayerPreferences
 import org.tribot.script.sdk.frameworks.behaviortree.*
-import org.tribot.script.sdk.painting.Painting
-import org.tribot.script.sdk.painting.template.basic.BasicPaintTemplate
-import org.tribot.script.sdk.painting.template.basic.PaintLocation
-import org.tribot.script.sdk.painting.template.basic.PaintTextRow
+import org.tribot.script.sdk.query.Query
 import org.tribot.script.sdk.util.TribotRandom
-import java.awt.Color
-import java.awt.Font
-import java.awt.Graphics2D
 import java.time.Instant
-import java.util.function.Consumer
 
 /**
  * @author Polymorphic
@@ -235,5 +227,133 @@ class ScriptBreakControlNode(
 
     private fun generateManageTimer() {
         manageTimer = Instant.now()
+    }
+}
+
+fun IParentNode.scriptDeathControl(init: IParentNode.() -> Unit) = initNode(
+    "Script Death Control",
+    ScriptDeathControlNode(),
+    init
+)
+
+class ScriptDeathControlNode : Decorator() {
+    override var name: String = "Script Death Control"
+
+    private val deathNpcId = 9855
+    private val deathPortalGameObjectId = 39549
+
+    // DO NOT CHANGE THE ORDER
+    private val selectOptions = arrayOf(
+        "Tell me about gravestones again.",
+        "How do I pay a gravestone fee?",
+        "How long do I have to return to my gravestone?",
+        "How do I know what will happen to my items when I die?",
+        "I think I'm done here."
+    )
+
+    private val selectOptionRootWidgetAddress = WidgetAddress.create(219) {
+        it.text.map { t ->
+            t.contains("Select an Option")
+        }.orElse(false)
+    }
+
+    private val getChatScreenConfig = ChatScreen.Config.builder()
+        .holdSpaceForContinue(true)
+        .build()
+
+    private fun handleNewCharacterDeathOptions(): Boolean {
+        ChatScreen.setConfig(getChatScreenConfig)
+        return ChatScreen.handle(*selectOptions)
+    }
+
+    private fun getDeathNpcQuery() = Query.npcs()
+        .idEquals(deathNpcId)
+        .isReachable
+
+    private fun getDeathPortalGameObjectQuery() = Query.gameObjects()
+        .idEquals(deathPortalGameObjectId)
+        .isReachable
+
+    private fun getGraveGameObject() = Query.gameObjects()
+        .nameEquals("Grave")
+        .actionContains("Check", "Loot")
+
+    override fun tick(): BehaviorTreeStatus {
+        if (child == null) throw IllegalStateException("ScriptDeathControlNode must have a child node")
+
+        return if (MyPlayer.isDiseased() || MyPlayer.getCurrentHealth() < 1 || getDeathNpcQuery().isAny) {
+            val grave = MyPlayer.getTile()
+
+            val waitForDeathResult = Waiting.waitUntil(10000) {
+                this@ScriptDeathControlNode.getDeathNpcQuery().isAny
+            }
+
+            if (!waitForDeathResult) return BehaviorTreeStatus.FAILURE
+
+            val handleDeathResult = behaviorTree {
+                repeatUntil({
+                    !this@ScriptDeathControlNode.getDeathNpcQuery().isAny
+                }) {
+                    sequence {
+                        selector {
+                            inverter { condition { ChatScreen.isOpen() } }
+                            condition { this@ScriptDeathControlNode.handleNewCharacterDeathOptions() }
+                        }
+                        selector {
+                            inverter {
+                                condition { this@ScriptDeathControlNode.getDeathPortalGameObjectQuery().isAny }
+                            }
+                            sequence {
+                                condition {
+                                    this@ScriptDeathControlNode.getDeathPortalGameObjectQuery()
+                                        .findFirst()
+                                        .map { it.interact("Use") }
+                                        .orElse(false)
+                                }
+                                condition {
+                                    Waiting.waitUntil {
+                                        !this@ScriptDeathControlNode.getDeathPortalGameObjectQuery().isAny
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }.tick()
+
+            if (handleDeathResult != BehaviorTreeStatus.SUCCESS) return BehaviorTreeStatus.FAILURE
+
+            val walkToGraveResult = behaviorTree {
+                repeatUntil({
+                    grave.isVisible && grave.distance() < 2 && canReach(grave)
+                }) {
+                    condition { walkTo(grave) }
+                }
+            }.tick()
+
+            if (walkToGraveResult != BehaviorTreeStatus.SUCCESS) return BehaviorTreeStatus.FAILURE
+
+            val lootGraveResult = behaviorTree {
+                repeatUntil({
+                    !this@ScriptDeathControlNode.getGraveGameObject().isAny
+                }) {
+                    sequence {
+                        condition {
+                            this@ScriptDeathControlNode.getGraveGameObject()
+                                .findFirst()
+                                .map { it.interact("Loot") }
+                                .orElse(false)
+                        }
+                    }
+                }
+            }.tick()
+
+            if (lootGraveResult != BehaviorTreeStatus.SUCCESS) return BehaviorTreeStatus.FAILURE
+
+            behaviorTree { walkToAndDepositInvBank() }.tick()
+        }
+        else {
+            child!!.tick()
+        }
     }
 }

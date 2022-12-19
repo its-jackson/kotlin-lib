@@ -31,3 +31,5 @@ fun waitUntilNotAnimating(
 
     return end <= currentTime - runningTime
 }
+
+fun waitAvgHumanReactionTime() = Waiting.waitNormal(250, 15)

@@ -6,12 +6,9 @@ import org.tribot.script.sdk.util.TribotRandom
 
 fun makeAllAvailableItems(names: Array<String> = arrayOf()) = Waiting.waitUntil {
     MakeScreen.makeAll {
-        if (names.isNotEmpty())
-            names.any { n ->
-                it.definition.name.contains(n, true)
-            }
-        else
-            it.isVisible && it.actions.isNotEmpty()
+        (names.isNotEmpty() && names.any { n ->
+            it.definition.name.contains(n, true)
+        }) || (it.isVisible && it.actions.isNotEmpty())
     }
 } && (
         Waiting.waitUntil { !MakeScreen.isOpen() } &&
