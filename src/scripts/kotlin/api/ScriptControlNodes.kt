@@ -281,7 +281,7 @@ class ScriptDeathControlNode : Decorator() {
     override fun tick(): BehaviorTreeStatus {
         if (child == null) throw IllegalStateException("ScriptDeathControlNode must have a child node")
 
-        return if (MyPlayer.isDiseased() || MyPlayer.getCurrentHealth() < 1 || getDeathNpcQuery().isAny) {
+        return if (MyPlayer.getCurrentHealth() < 1 || getDeathNpcQuery().isAny) {
             val grave = MyPlayer.getTile()
 
             val waitForDeathResult = Waiting.waitUntil(10000) {
